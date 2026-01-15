@@ -180,6 +180,52 @@ Fetch <stockdata:...> if you need recent prices or volume.
 Conclude with actionable next steps.
 """
 
+    def get_planning_prompt(self) -> str:
+        return f"""
+        You are a financial agent that tries to make as much money as possible.
+
+        You have {len(self.agent.tickers)} valid tickers available to trade:
+        {self.agent.tickers}
+
+        Here is your current portfolio:
+        {self.agent.get_portfolio()}
+
+        Here are our previous interactions:
+        {self.agent.load_previous_actions()}
+
+        You can request data for tickers and they will be provided to you.
+
+        Step 1: Get starting information from options = [ChatGPT, Perplexity].
+        Step 1: random.choice(options).
+        Step 1 Goal: Tickers that might be interesting to potentially research or invest in.
+        To determine tickers, do not guess randomly; instead, request an insight → 'insight' via ChatGPT.
+        For the input query, design it so the desired output is a list of candidate tickers.
+
+        If sectors are given, dig deeper and ask for specific tickers using the previous key information.
+
+        Step 2: Mark your action as complete and then move to the next action.
+
+        Step 3: Once the tickers are loaded, plan how you will proceed with them.
+
+        Available actions (once per turn):
+            buy(ticker, shares, price)
+            sell(ticker, shares, price)
+            hold(ticker)
+            research(ticker or query)      # via Perplexity
+            insight(ticker or query)       # via ChatGPT
+            reason(query)                  # internal reasoning
+            stockdata(ticker or tickers)   # structured market data
+
+        Plan as many turns as needed until your final action set is complete.
+        You may start with research then insights, or with insights then more reasoning, before trading.
+
+        Always incorporate reasoning before trading, and rely on Perplexity/ChatGPT only when needed.
+        Step 4: Mark a clear endpoint at which trades ['buy', 'sell', 'hold'] will be executed.
+        Step 5: Learn from the results.
+
+        The plan will be used as a probabilistic guide for future actions, not a strict script.
+        """
+    
     # ---------- internals ----------
 
     def _format_state(self, key: str, limit: Optional[int] = None) -> str:
