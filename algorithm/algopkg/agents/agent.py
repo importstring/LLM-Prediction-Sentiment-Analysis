@@ -1,13 +1,17 @@
-from algopkg.data.stock_data import StockData
-from algopkg.llm.coordinator import LLMCoordinator
-from algopkg.prompts.prompt_manager import PromptManager
-from algopkg.research.selection import TickerSelector
-from algopkg.research.analysis import ResearchAnalyzer
-from algopkg.trading.execution import TradeExecutor
-from algopkg.portfolio.portfolio import PortfolioManager
-from algopkg.portfolio.learning import LearningEngine
-from algopkg.research.logger import ResearchLogger
-from algopkg.ui.progress import loading_bar
+from algopkg.data_models.stock_data import StockData
+from algopkg.data_models.portfolio import PortfolioManager
+
+from algopkg.llm_clients.coordinator import LLMCoordinator
+
+from algopkg.agents.prompt_manager import PromptManager
+from algopkg.agents.ticker_selector import TickerSelector
+from algopkg.agents.research_analyzer import ResearchAnalyzer
+from algopkg.agents.trade_executor import TradeExecutor
+from algopkg.agents.learning_engine import LearningEngine
+from algopkg.agents.research_logger import ResearchLogger
+
+from algopkg.progress_ui.rich_progress import loading_bar
+
 
 import logging
 from typing import List, Dict, Any
