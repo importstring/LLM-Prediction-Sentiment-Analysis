@@ -33,7 +33,7 @@ class Agent:
         self.active_tickers: list[str] = []
         self.plan: str = ""
 
-    def begin(self) -> None:
+    def main(self) -> None: # Previously called begin: adding def begin just to remind myself
         with loading_bar:
             phases = [
                 ("Strategic Planning", self.plan_actions),
@@ -52,3 +52,4 @@ class Agent:
         self.finalize_execution()
         loading_bar.dynamic_update("✅ Agent execution completed", operation="begin")
 
+    
