@@ -47,8 +47,4 @@ project-root/
 │  ├─ info/
 │  │  └─ tickers/
 │  └─ rankings/
-└─ scripts/
-   └─ llm_insights/
-      └─ api_keys/
-
 ```
