@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-from sentiment_analysis import SentimentAnalyzer, SentimentConfig  # TODO: adjust import to package layout
+from algopkg.utils.sentiment_analysis import SentimentAnalyzer, SentimentConfig  # TODO: adjust import to package layout
 
 
 class LLMProvider(str, Enum):
