@@ -7,6 +7,7 @@ data/info/
 data/rankings
 scripts/
 *.env
+*.venv/
 .venv/
 algorithm/*.egg-info/
 algorithm/build/

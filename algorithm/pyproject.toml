@@ -7,7 +7,7 @@ name = "algopkg"
 version = "0.1.0"
 description = "AI finance agent for portfolio analysis and LLM bias experiments."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 authors = [
   { name = "Simon Bergeron" }
 ]
@@ -15,28 +15,37 @@ license = { text = "MIT" }
 
 # Runtime dependencies for the algorithm package [Jan 2026]
 dependencies = [
-  "pandas>=2.2.3,<3.0",
-  "numpy>=1.26,<3.0",
-  "yfinance>=0.2.52,<0.3",
-  "rich>=13.9,<15.0",
-  "python-dotenv>=1.0,<2.0",
+  # Core data stack
+  "pandas>=2.2.3,<2.4",      # 2.2.3 and 2.3.x are current stable; keep <2.4 while 3.0 is brewing 
+  "numpy>=1.26,<3.0",        # 1.26 supports Python 3.12; 2.x is still a big jump 
+  "lxml>=5.0,<6.0",          # HTML parsing backend required by pandas.read_html
 
+  # Market data
+  "yfinance>=0.2.52,<0.3",   # 0.2.52+ includes YFRateLimitError + recent fixes 
+
+  # CLI / config
+  "rich>=13.9,<15.0",
+  "python-dotenv>=1.0,<2.0", # 1.x current, supports modern Python 
+
+  # HTTP / async / retries
   "requests>=2.31,<3.0",
   "aiohttp>=3.9,<4.0",
   "tenacity>=8.2,<9.0",
+  "urllib3>=2.2,<3.0",       # so Retry.backoff_jitter is available
 
-  "openai>=1.6,<2.0",       
-  "anthropic>=0.39,<1.0",   
-  "google-genai>=0.6,<1.0", 
+  # LLM clients
+  "openai>=1.40,<2.0",       # latest 1.x line with many fixes/features
+  "anthropic>=0.39,<1.0",
+  "google-genai>=0.6,<2.0",
 ]
 
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=7.0",
-  "black>=24.0",
-  "ruff>=0.5",
-  "mypy>=1.10",
+  "pytest>=8.0,<9.0",
+  "black>=24.10,<25.0",
+  "ruff>=0.6,<0.7",
+  "mypy>=1.11,<2.0",
 ]
 
 [project.urls]
