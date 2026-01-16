@@ -6,6 +6,7 @@ This module provides:
 - StockData: loads local CSVs, checks recency, and refreshes stale data.
 
 For testing
+
 # --- dev-only import shim ---------------------------------------------------
 if __name__ == "__main__":  
     import sys
@@ -15,17 +16,19 @@ if __name__ == "__main__":
     this_file = Path(__file__).resolve()
     project_root = this_file.parents[2]  # go up to <project-root>
     sys.path.insert(0, str(project_root))
+
+    
 """
+from __future__ import annotations
 
 __notes__ = "Y-Finance is very flaky. Be careful to not overload their servers with requests."
-
-from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from io import StringIO
 import pandas as pd
 import requests
 import yfinance as yf
@@ -62,15 +65,17 @@ class Sp500IndexProvider:
 
     @classmethod
     def get_tickers(cls) -> List[str]:
+        """Return the list of S&P 500 ticker symbols from Wikipedia."""
         html = cls._fetch_wikipedia_html()
-        tables = pd.read_html(html)
+        tables = pd.read_html(StringIO(html))
         if not tables:
             raise RuntimeError("No tables found on S&P 500 Wikipedia page.")
         table = tables[0]
-        return table["Symbol"].tolist()
+        return table["Symbol"].tolist() 
 
     @classmethod
     def _fetch_wikipedia_html(cls) -> str:
+        """Fetch the raw HTML for the S&P 500 components page."""
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -81,7 +86,6 @@ class Sp500IndexProvider:
         resp = requests.get(cls.WIKI_URL, headers=headers, timeout=10)
         resp.raise_for_status()
         return resp.text
-
 
 # ---------------------------------------------------------------------------
 # Downloader (yfinance)
