@@ -1,5 +1,11 @@
-from __future__ import annotations
+"""Stock price data loading and refresh utilities.
 
+This module provides:
+- Sp500IndexProvider: fetches the current S&P 500 constituents from Wikipedia.
+- StockDataDownloader: downloads OHLCV data via yfinance and writes CSVs.
+- StockData: loads local CSVs, checks recency, and refreshes stale data.
+
+For testing
 # --- dev-only import shim ---------------------------------------------------
 if __name__ == "__main__":  
     import sys
@@ -9,6 +15,11 @@ if __name__ == "__main__":
     this_file = Path(__file__).resolve()
     project_root = this_file.parents[2]  # go up to <project-root>
     sys.path.insert(0, str(project_root))
+"""
+
+__notes__ = "Y-Finance is very flaky. Be careful to not overload their servers with requests."
+
+from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
