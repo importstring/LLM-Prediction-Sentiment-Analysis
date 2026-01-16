@@ -6,3 +6,4 @@ data/stock_data/
 data/info/
 data/rankings
 scripts/
+*.env
