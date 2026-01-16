@@ -41,8 +41,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/importstring/LLM-Prediction-Sentiment-Analysis"
-Issues = "https://github.com/importstring/LLM-Prediction-Sentiment-Analysis
-/issues"
+Issues = "https://github.com/importstring/LLM-Prediction-Sentiment-Analysis/issues"
 
 [tool.setuptools]
 packages = ["algopkg"]
