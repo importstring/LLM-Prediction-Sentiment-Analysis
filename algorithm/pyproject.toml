@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "algopkg"
-version = "0.1.0"
+version = "0.0.001"
 description = "AI finance agent for portfolio analysis and LLM bias experiments."
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
