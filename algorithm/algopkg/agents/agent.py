@@ -112,8 +112,8 @@ class Agent:
         loading_bar.dynamic_update("Generating plan", operation="Planning")
 
         prompt = self.prompt_manager.get_planning_prompt()
-        # TODO: switch to planner via LLMCoordinator if desired
-        self.plan = self.llms.plan(prompt)  # or self.ollama.make_plan(prompt)
+        # TODO: switch to planner via LLMCoordinator
+        self.plan = self.llms.plan(prompt)
 
         loading_bar.dynamic_update("Plan generated", operation="Planning")
         loading_bar.dynamic_update("Actions planned", operation="plan_actions")
