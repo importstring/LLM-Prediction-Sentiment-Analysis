@@ -1,10 +1,10 @@
 """CLI progress reporting utilities using Rich.
 
 Provides:
-- RichProgressSink: context-managed sink that renders phase progress with a
+- LoadingBar: context-managed sink that renders phase progress with a
   spinner and progress bar.
 - make_cli_reporter: helper to construct an AgentStatusReporter wired to a
-  RichProgressSink for CLI use.
+  LoadingBar for CLI use.
 """
 
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
@@ -12,7 +12,7 @@ from rich.console import Console
 from status import PhaseStatus, AgentStatusReporter
 
 
-class RichProgressSink:
+class LoadingBar:
     """Sink that renders phase status updates using a Rich progress bar."""
 
     def __init__(self):
@@ -55,10 +55,10 @@ class RichProgressSink:
 
 
 def make_cli_reporter() -> AgentStatusReporter:
-    """Create an AgentStatusReporter backed by a RichProgressSink.
+    """Create an AgentStatusReporter backed by a LoadingBar.
 
     Returns:
-        A tuple of (AgentStatusReporter, RichProgressSink) wired for CLI use.
+        A tuple of (AgentStatusReporter, LoadingBar) wired for CLI use.
     """
-    sink = RichProgressSink()
+    sink = LoadingBar()
     return AgentStatusReporter(sink), sink
