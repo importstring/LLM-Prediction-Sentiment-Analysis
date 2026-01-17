@@ -7,10 +7,6 @@ from typing import Dict, List, Tuple, Literal
 from google import genai
 from google.genai import types  # type: ignore[import]
 
-
-from pathlib import Path
-from dotenv import load_dotenv
-
 # Rough cost/quality tiers:
 # - Expensive  : high-reasoning Pro model
 # - Medium     : balanced Flash model
