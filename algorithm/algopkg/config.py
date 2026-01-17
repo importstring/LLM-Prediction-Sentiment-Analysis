@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-import os
 from dotenv import load_dotenv
+
+from algopkg.utils.paths import find_project_root
 
 
 # ---------------------------------------------------------------------------
 # Project paths
 # ---------------------------------------------------------------------------
 
-PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[2]  # project-root/
+PROJECT_ROOT: Final[Path] = find_project_root(Path(__file__))
+
 DATA_ROOT: Final[Path] = PROJECT_ROOT / "data"
 SCRIPTS_ROOT: Final[Path] = PROJECT_ROOT / "scripts"
 ENV_PATH: Final[Path] = PROJECT_ROOT / "algorithm" / ".env"
@@ -30,17 +33,13 @@ class Settings:
     info_tickers: Path = DATA_ROOT / "info" / "tickers"
     rankings: Path = DATA_ROOT / "rankings"
 
-    api_keys_root: Path = SCRIPTS_ROOT / "llm_insights" / "api_keys"
-
 
 settings: Final[Settings] = Settings()
-
 
 # ---------------------------------------------------------------------------
 # API keys / secrets
 # ---------------------------------------------------------------------------
 
-# Load .env if present (for local development)
 load_dotenv(ENV_PATH)
 
 OPENAI_API_KEY: Final[str | None] = os.getenv("OPENAI_API_KEY")
