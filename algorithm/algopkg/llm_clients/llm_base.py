@@ -47,7 +47,7 @@ class BaseLLMClient(ABC):
 
     def __init__(
         self,
-        enable_sentiment: bool = False,
+        enable_sentiment: bool = True,
         sentiment_config: Optional[SentimentConfig] = None,
     ) -> None:
         """
