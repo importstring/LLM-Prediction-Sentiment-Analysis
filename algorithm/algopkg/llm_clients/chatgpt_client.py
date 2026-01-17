@@ -13,7 +13,7 @@ class OpenAIConfig:
     # Adjusted the models. Last updated Jan 2026
     SUPPORTED_MODELS: Dict[str, Dict[str, int]] = {
         # Flagship general-purpose model
-        "gpt-4o": {"max_tokens": 16_000}, # ~16k output, ~128k context [web:9]
+        "gpt-4o": {"max_tokens": 16_000}, # ~16k output, ~128k context
         
         # Newer 4.1 family – great for code / tools
         "gpt-4.1": {"max_tokens": 16_000}, # Up to 1M context
