@@ -79,7 +79,6 @@ class Agent:
         """
         with loading_bar:
             phases = [
-                ("Strategic Planning", self.plan_actions),
                 ("Stock Selection", self.pick_tickers),
                 ("Research Analysis", self.research_and_insight),
                 ("Trade Execution", self.execute_trades),
@@ -98,25 +97,6 @@ class Agent:
     # Using main.py but just in case for old logic
     def begin(self) -> None:
         self.main()
-
-    # ------------------------------------------------------------------
-    # Phase 0: Strategic Planning
-    # ------------------------------------------------------------------
-
-    def plan_actions(self) -> None:
-        """
-        Phase 0: Generate a high-level plan of actions for this run
-        using PromptManager + planner LLM.
-        """
-        loading_bar.dynamic_update("Planning actions", operation="plan_actions")
-        loading_bar.dynamic_update("Generating plan", operation="Planning")
-
-        prompt = self.prompt_manager.get_planning_prompt()
-        # TODO: switch to planner via LLMCoordinator
-        self.plan = self.llms.plan(prompt)
-
-        loading_bar.dynamic_update("Plan generated", operation="Planning")
-        loading_bar.dynamic_update("Actions planned", operation="plan_actions")
 
     # ------------------------------------------------------------------
     # Phase 1: Stock Selection
