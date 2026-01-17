@@ -21,7 +21,10 @@ dependencies = [
   "lxml>=5.0,<6.0",          # HTML parsing backend required by pandas.read_html
 
   # Market data
-  "yfinance>=0.2.52,<0.3",   # 0.2.52+ includes YFRateLimitError + recent fixes 
+  "yfinance>=0.2.52,<0.3",   # 0.2.52+ includes YFRateLimitError + recent fixes
+
+  # NLP
+  "nltk>=3.9,<4.0",          # 3.9.x supports Python 3.9–3.13 
 
   # CLI / config
   "rich>=13.9,<15.0",
