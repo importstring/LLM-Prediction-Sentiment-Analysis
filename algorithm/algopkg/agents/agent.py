@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 from algopkg.data_models.stock_data import StockData
 from algopkg.data_models.portfolio import PortfolioManager
 
-from algopkg.llm_clients.llm_base import BaseLLMClient as LLMCoordinator  # TODO: Build
+from algopkg.llm_clients.llm_base import BaseLLMClient as LLMCoordinator  
 
 from algopkg.agents.prompt_manager import PromptManager
 from algopkg.agents.ticker_selector import TickerSelector
