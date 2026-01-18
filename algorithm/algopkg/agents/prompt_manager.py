@@ -1,258 +1,388 @@
 from __future__ import annotations
 
-from typing import List, Optional, Dict, Any
+from typing import Any, List, Optional, Dict
 
 
 class PromptManager:
     """
     Centralized prompt generation for the financial agent.
-    
+
+    This is a stripped-down manager that only knows how to render
+    concrete prompt templates for the different phases (sentiment,
+    research, ensemble, portfolio construction, learning, etc.).
+
     Responsibilities:
-        - Provide clean, consistent prompts for each phase.
-        - Handle state formatting (portfolio, tickers, history) for LLM consumption.
-        - Maintain single action syntax across all prompts.
+      - Provide clean, consistent prompts for each phase.
+      - Handle state formatting (portfolio, tickers, history) for LLM consumption.
+      - Maintain consistent JSON-only output instructions.
     """
 
-    # Role definitions
-    ROLE_STOCK_SELECTION = (
-        "You are a stock screener identifying 30–120 high-potential stocks from the S&P 500 "
-        "for long-term growth (20-year horizon)."
-    )
-    ROLE_RESEARCH = (
-        "You are a fundamental and technical analyst evaluating specific stocks "
-        "using financial metrics, industry trends, and valuation frameworks."
-    )
-    ROLE_REASONING = (
-        "You are a portfolio strategist using data analysis, risk assessment, and mathematical reasoning "
-        "to synthesize investment decisions."
-    )
+    # ======================================================================
+    # Phase 1 – Sentiment prompts
+    # ======================================================================
 
-    # Action reference (consistent syntax)
-    ACTION_REFERENCE = """
-Available actions (use <action:param> syntax):
-  <insight:TICKER>          - Get market insights for a single ticker
-  <research:TICKER>         - Get fundamental/technical research for a ticker
-  <reason:QUERY>            - Internal reasoning (calculations, synthesis)
-  <stockdata:TICKER>        - Fetch OHLCV market data
-  <select:TICK1,TICK2,...)>  - Submit final selection (stock selection phase only)
-
-Guidelines:
-  - Use <reason:...> for internal math (no LLM cost).
-  - Use <insight:...> and <research:...> judiciously (LLM API calls).
-  - All tickers must be valid S&P 500 symbols.
-  - Final selection: 30–120 tickers.
-"""
-
-    def __init__(self, agent: Any) -> None:
-        self.agent = agent
-
-    def get_stock_selection_prompt(self) -> str:
-        """
-        Generate the prompt for the stock selection phase.
-        
-        Goal: Filter the S&P 500 down to 30–120 high-potential stocks.
-        """
-        return f"""
-{self.ROLE_STOCK_SELECTION}
-
-Current state:
-  - Available tickers: {len(self.agent.tickers)} stocks
-    (sample: {", ".join(self.agent.tickers[:5])}...)
-  - Current portfolio: {self._format_state("portfolio")}
-  - Previous actions: {self._format_state("previous_actions", limit=3)}
-
-Your task:
-1. Categorize stocks by sector and risk level.
-2. Identify emerging trends and disruptive technologies.
-3. Analyze growth potential, competitive advantage, and financial health.
-4. Consider macroeconomic factors and industry outlooks.
-5. Assign risk-reward scores and eliminate lower-scoring stocks.
-6. Maintain diversification across sectors.
-7. Narrow down to 30–120 high-potential stocks.
-8. Submit your final selection using <select:TICKER1,TICKER2,...>
-
-{self.ACTION_REFERENCE}
-
-Use <reason:...> extensively for internal analysis. Use <insight:...> and <research:...> for critical validation.
-Only submit your final <select:...> when you have your curated list of 30–120 tickers.
-"""
-
-    def get_research_prompt(
+    def ticker_sentiment_batch(
         self,
-        tickers: List[str] | None = None,
-        max_tickers: int = 15,
-        focus_areas: Optional[List[str]] = None,
+        tickers: List[str],
     ) -> str:
-        """
-        Generate the prompt for the research phase.
-        
-        Goal: Deep dive into a curated set of tickers with comprehensive analysis.
-        
-        Args:
-            tickers: Tickers to analyze. Defaults to agent.active_tickers.
-            max_tickers: Limit to avoid prompt bloat.
-            focus_areas: Optional list of analysis dimensions (e.g., ["valuation", "growth"]).
-        """
-        tickers = (tickers or self.agent.active_tickers)[:max_tickers]
-        focus = (
-            "\n  ".join(focus_areas)
-            if focus_areas
-            else "Fundamental analysis, Technical analysis, Valuation, Risk assessment"
-        )
-
+        batch_size = len(tickers)
+        tickers_block = ", ".join(tickers)
         return f"""
-{self.ROLE_RESEARCH}
+You are a financial sentiment analyst analyzing stock market sentiment.
 
-Tickers to analyze: {", ".join(tickers)}
+I will give you a list of tickers. For EACH ticker, output your sentiment assessment.
 
-Focus areas:
-  {focus}
+TICKERS TO ANALYZE ({batch_size} total):
+{tickers_block}
 
-Framework:
-1. Fundamental Analysis:
-   - Financial statements, ratios (P/E, P/B, ROE, debt-to-equity, margins)
-   - Competitive position, economic moat, market share
+For each ticker, analyze:
+1. Recent market momentum (price trend, volume)
+2. Sector rotation trends
+3. Company fundamentals (if you have knowledge)
+4. Macroeconomic factors affecting this sector
+5. Technical chart patterns (if you have data)
 
-2. Technical Analysis:
-   - Price trends, volume patterns, support/resistance, momentum indicators
-   - Potential breakout points and risk zones
+OUTPUT INSTRUCTIONS:
+- Output ONLY a valid JSON array. No markdown, no explanation, no extra text.
+- Each element must have exactly these keys:
+  - "ticker": the stock symbol
+  - "sentiment_label": MUST be exactly one of: "bullish", "neutral", "bearish"
+  - "sentiment_score": a float from -1.0 (bearish) to +1.0 (bullish). Examples:
+    * -0.9 to -1.0: strongly bearish
+    * -0.5 to -0.9: moderately bearish
+    * -0.2 to -0.5: slightly bearish
+    * -0.2 to +0.2: neutral
+    * +0.2 to +0.5: slightly bullish
+    * +0.5 to +0.9: moderately bullish
+    * +0.9 to +1.0: strongly bullish
+  - "confidence": a float from 0.0 to 1.0 indicating how confident you are in this sentiment
+    * 0.0-0.3: low confidence (uncertain, conflicting signals)
+    * 0.3-0.7: moderate confidence (some strong signals, some weak)
+    * 0.7-1.0: high confidence (strong consensus of multiple factors)
+  - "rationale": a 1-2 sentence explanation of your sentiment
 
-3. Industry & Macro:
-   - Sector performance, cyclicality, growth drivers
-   - Macroeconomic headwinds and tailwinds
+EXAMPLE OUTPUT (valid JSON array):
+[
+  {{"ticker": "AAPL", "sentiment_label": "bullish", "sentiment_score": 0.65, "confidence": 0.78, "rationale": "Strong tech sector momentum, robust earnings, high institutional buying pressure."}},
+  {{"ticker": "XYZ", "sentiment_label": "bearish", "sentiment_score": -0.42, "confidence": 0.55, "rationale": "Sector headwinds, declining volume, mixed guidance from competitors."}},
+  {{"ticker": "ABC", "sentiment_label": "neutral", "sentiment_score": 0.05, "confidence": 0.61, "rationale": "Balanced bull and bear signals; awaiting earnings catalysts."}}
+]
 
-4. Qualitative Factors:
-   - Management quality, governance, R&D spending, innovation pipeline
+Now analyze the tickers above. Output ONLY the JSON array, nothing else.
+""".strip()
 
-5. Risk Assessment:
-   - Market, financial, operational, regulatory risks
-   - ESG impact on long-term value
-
-6. Valuation:
-   - Intrinsic value (DCF, comparables, sum-of-parts)
-   - Margin of safety vs. current price
-
-7. Decision:
-   - Buy, sell, or hold? Specify position sizing rationale.
-
-Current portfolio: {self._format_state("portfolio")}
-Previous plan: {self._format_state("plan", limit=5)}
-
-{self.ACTION_REFERENCE}
-
-Prioritize <reason:...> for analysis. Use <stockdata:...> to fetch recent prices/volume.
-Use <insight:...> and <research:...> to validate critical assumptions.
-"""
-
-    def get_reasoning_prompt(self, context: str, max_history: int = 5) -> str:
-        """
-        Generate the prompt for the reasoning phase.
-        
-        Goal: Synthesize data into clear, actionable insights.
-        
-        Args:
-            context: Current context or analysis results.
-            max_history: Number of previous actions to include.
-        """
+    def ticker_sentiment_single(
+        self,
+        ticker: str,
+        sector: str,
+        recent_events: str,
+    ) -> str:
         return f"""
-{self.ROLE_REASONING}
+You are a financial sentiment analyst.
 
-Current context:
-{context}
+Analyze this stock and provide a sentiment assessment:
 
-Portfolio state: {self._format_state("portfolio")}
-Recent actions:
-{self._format_state("previous_actions", limit=max_history)}
+TICKER: {ticker}
+SECTOR: {sector}
+RECENT EVENTS / CONTEXT: {recent_events}
 
-Analysis checklist:
-  ✓ Market conditions and trends
-  ✓ Technical indicators and price momentum
-  ✓ Fundamental metrics and valuation
-  ✓ Risk factors and catalysts
-  ✓ Portfolio impact and diversification
-  ✓ Entry/exit timing and position sizing
-  ✓ Long-term strategic alignment
+Assess sentiment by considering:
+1. Price momentum (short-term trend)
+2. Sector health and rotation
+3. Company-specific catalysts (earnings, product launches, regulatory news)
+4. Macroeconomic backdrop
+5. Valuation context (relative to peers)
 
-{self.ACTION_REFERENCE}
+Output ONLY a JSON object (not an array) with these exact keys:
+- "ticker": the symbol
+- "sentiment_label": one of "bullish", "neutral", "bearish"
+- "sentiment_score": -1.0 to +1.0
+- "confidence": 0.0 to 1.0
+- "rationale": brief explanation
 
-Provide clear, step-by-step reasoning. Use <reason:...> for math and synthesis.
-Fetch <stockdata:...> if you need recent prices or volume.
-Conclude with actionable next steps.
-"""
+Example:
+{{"ticker": "AAPL", "sentiment_label": "bullish", "sentiment_score": 0.72, "confidence": 0.85, "rationale": "Positive sentiment from AI chip demand, strong cash flow, and institutional accumulation."}}
 
-    def get_planning_prompt(self) -> str:
+Analyze {ticker} now. Output ONLY the JSON object, nothing else.
+""".strip()
+
+    # ======================================================================
+    # Phase 2 – Ensemble & financial/agentic synthesis
+    # ======================================================================
+
+    def ensemble_sentiment_interpretation(
+        self,
+        ticker: str,
+        llm_sentiments_table: str,
+        disagreement_level: str,
+    ) -> str:
         return f"""
-        You are a financial agent that tries to make as much money as possible.
+You are synthesizing sentiment from multiple AI analysts.
 
-        You have {len(self.agent.tickers)} valid tickers available to trade:
-        {self.agent.tickers}
+TICKER: {ticker}
 
-        Here is your current portfolio:
-        {self.agent.get_portfolio()}
+INDIVIDUAL LLM SENTIMENTS:
+{llm_sentiments_table}
 
-        Here are our previous interactions:
-        {self.agent.load_previous_actions()}
+Example table:
+| Model      | Sentiment  | Score | Confidence |
+|------------|-----------|-------|------------|
+| ChatGPT    | bullish   | 0.68  | 0.82       |
+| Claude     | bullish   | 0.75  | 0.88       |
+| Perplexity | neutral   | 0.15  | 0.71       |
+| Gemini     | bullish   | 0.62  | 0.79       |
 
-        You can request data for tickers and they will be provided to you.
+DISAGREEMENT LEVEL: {disagreement_level}
+(Low = high consensus, High = models strongly disagree)
 
-        Step 1: Get starting information from options = [ChatGPT, Perplexity].
-        Step 1: random.choice(options).
-        Step 1 Goal: Tickers that might be interesting to potentially research or invest in.
-        To determine tickers, do not guess randomly; instead, request an insight → 'insight' via ChatGPT.
-        For the input query, design it so the desired output is a list of candidate tickers.
+Interpret this panel:
+1. What is the consensus sentiment? (bullish/neutral/bearish)
+2. How confident should we be in this consensus?
+3. What are the key points of agreement / disagreement?
+4. If models disagree, which factors caused the split?
+5. Any red flags or noteworthy outliers?
 
-        If sectors are given, dig deeper and ask for specific tickers using the previous key information.
+Output a JSON object:
+{{
+  "ensemble_label": "bullish/neutral/bearish",
+  "ensemble_score": (float, -1 to 1),
+  "consensus_confidence": (float, 0 to 1),
+  "key_agreement": "what models agree on",
+  "key_disagreement": "where models split",
+  "interpretation": "2-3 sentences on what this ensemble sentiment means"
+}}
 
-        Step 2: Mark your action as complete and then move to the next action.
+Analyze the ensemble above. Output ONLY the JSON object.
+""".strip()
 
-        Step 3: Once the tickers are loaded, plan how you will proceed with them.
+    def financial_metrics_synthesis(
+        self,
+        ticker: str,
+        metrics_data: str,
+    ) -> str:
+        return f"""
+You are a quantitative analyst synthesizing financial metrics.
 
-        Available actions (once per turn):
-            buy(ticker, shares, price)
-            sell(ticker, shares, price)
-            hold(ticker)
-            research(ticker or query)      # via Perplexity
-            insight(ticker or query)       # via ChatGPT
-            reason(query)                  # internal reasoning
-            stockdata(ticker or tickers)   # structured market data
+TICKER: {ticker}
 
-        Plan as many turns as needed until your final action set is complete.
-        You may start with research then insights, or with insights then more reasoning, before trading.
+FINANCIAL METRICS DATA:
+{metrics_data}
 
-        Always incorporate reasoning before trading, and rely on Perplexity/ChatGPT only when needed.
-        Step 4: Mark a clear endpoint at which trades ['buy', 'sell', 'hold'] will be executed.
-        Step 5: Learn from the results.
+Example:
+- Current Price: $150.25
+- Implied Volatility (IV): 28%
+- Black-Scholes Fair Value: $148.50
+- IV Surface Skew: Normal
+- 3-month Price Prediction (ML model): $158.20 ± $12.00
+- Risk Metrics:
+  * Sharpe Ratio: 0.95
+  * VaR (95%, 1-day): -2.3%
+  * Efficient Frontier Position: Mid-risk, mid-return
+- Valuation:
+  * P/E Ratio: 22x (vs sector 20x)
+  * PEG Ratio: 1.1
+  * Price-to-Book: 3.2
 
-        The plan will be used as a probabilistic guide for future actions, not a strict script.
-        """
-    
-    # ---------- internals ----------
+Evaluate:
+1. Is the stock fairly valued (B-S vs market price)?
+2. What is the risk-adjusted upside potential?
+3. Do the ML predictions align with fundamental value?
+4. How does volatility compare to historical and peer levels?
+5. Does this fit your risk tolerance and time horizon?
 
-    def _format_state(self, key: str, limit: Optional[int] = None) -> str:
-        """
-        Format agent state into readable text for the prompt.
-        
-        Prevents dumping raw Python structures into the LLM.
-        """
-        if key == "portfolio":
-            portfolio = getattr(self.agent, "portfolio", {})
-            if not portfolio:
-                return "Empty"
-            items = list(portfolio.items())[:limit] if limit else list(portfolio.items())
-            return ", ".join([f"{k}:{v}" for k, v in items])
+Output a JSON object:
+{{
+  "valuation_assessment": "fairly valued / undervalued / overvalued",
+  "valuation_score": (0-100, higher = better value),
+  "risk_assessment": "low / moderate / high",
+  "upside_potential": "score 0-100 based on ML predictions and fundamentals",
+  "downside_risk": "score 0-100, with VaR and stress test results",
+  "combined_financial_score": (0-100, this becomes the 'X' in final ranking),
+  "key_insights": "2-3 sentence summary of financial health"
+}}
 
-        if key == "previous_actions":
-            actions = getattr(self.agent, "previous_actions", [])
-            if not actions:
-                return "None"
-            items = actions[-limit:] if limit else actions
-            return "\n  ".join([str(a) for a in items])
+Synthesize the metrics above. Output ONLY the JSON object.
+""".strip()
 
-        if key == "plan":
-            plan = getattr(self.agent, "plan", "")
-            if not plan:
-                return "No plan yet."
-            lines = str(plan).split("\n")[:limit] if limit else str(plan).split("\n")
-            return "\n  ".join(lines)
+    def agentic_reflection_and_validation(
+        self,
+        ticker: str,
+        agent_outputs: str,
+        portfolio_constraints: str,
+    ) -> str:
+        return f"""
+You are an orchestrator reviewing specialized agent analyses.
 
-        return "N/A"
+TICKER: {ticker}
+
+AGENT OUTPUTS (from 5 specialized agents):
+{agent_outputs}
+
+Example:
+- Pricing Agent: "B-S fair value $148, current $150 (slight premium). IV normal. Recommend neutral on entry price."
+- Risk Agent: "VaR acceptable, Greeks balanced. Mild gamma exposure. Good for core portfolio."
+- Portfolio Agent: "Efficient frontier: efficient position. Correlations low with existing holdings. Add to optimize Sharpe."
+- ML Agent: "Model predicts $158 ± $12. High confidence. Aligns with fundamental upside."
+- Data Quality Agent: "All data fresh as of today. IV surface liquid. No data quality concerns."
+
+PORTFOLIO CONSTRAINTS:
+{portfolio_constraints}
+
+Example:
+- Maximum position size: 5% of portfolio
+- Risk tolerance: moderate (target volatility 12%)
+- Sector allocation: Tech capped at 25%
+- Rebalance frequency: monthly
+
+REFLECTION QUESTIONS:
+1. Do all agents agree this ticker is a good candidate?
+2. Are there any red flags or concerns across the five perspectives?
+3. Does adding this ticker respect the portfolio constraints?
+4. What is the agents' collective confidence level (0-100)?
+5. Should this ticker be included, excluded, or marked "conditional"?
+
+Output a JSON object:
+{{
+  "agent_consensus": "strong agree / mild agree / neutral / mild disagree / strong disagree",
+  "consensus_score": (0-100, higher = more unified agreement),
+  "key_concerns": "list any red flags raised by agents",
+  "portfolio_fit": "excellent / good / acceptable / poor",
+  "constraint_violations": "any hard constraints violated? List them or 'none'",
+  "recommendation": "include / exclude / conditional (with condition)",
+  "agentic_analysis_score": (0-100, this becomes the 'Y' in final ranking),
+  "rationale": "2-3 sentences on agent consensus"
+}}
+
+Reflect on the agent outputs above. Output ONLY the JSON object.
+""".strip()
+
+    # ======================================================================
+    # Phase 3 – Combined ranking & portfolio construction
+    # ======================================================================
+
+    def combined_ranking_and_portfolio_construction(
+        self,
+        ticker_scores_table: str,
+        weighting_strategy: str,
+    ) -> str:
+        return f"""
+You are building a final AI portfolio from scored candidates.
+
+CANDIDATE TICKER SCORES:
+{ticker_scores_table}
+
+Example:
+| Ticker | X (Finance) | Y (Agentic) | Z (Sentiment) | Current Weight |
+|--------|------------|------------|---------------|----------------|
+| AAPL   | 85         | 78         | 82            | 0              |
+| MSFT   | 92         | 81         | 75            | 0              |
+| GOOGL  | 88         | 85         | 80            | 0              |
+| NVDA   | 79         | 82         | 88            | 0              |
+| TSLA   | 72         | 68         | 65            | 0              |
+
+WEIGHTING STRATEGY:
+{weighting_strategy}
+
+Example:
+- Method: Weighted average with dynamic adjustment
+- Weights:
+  * X (Financial): 40% (fundamentals matter most)
+  * Y (Agentic): 30% (agent reasoning + constraints)
+  * Z (Sentiment): 30% (ensemble LLM consensus)
+- Risk Target: 12% portfolio volatility
+- Position Size Limits: max 5% per stock, max 25% per sector
+- Rebalance: hold for 1 month then reassess
+
+PORTFOLIO CONSTRUCTION:
+1. Calculate W = 0.4*X + 0.3*Y + 0.3*Z for each ticker
+2. Sort by W (descending)
+3. Allocate positions to hit risk target while respecting constraints
+4. Ensure no sector exceeds 25%, no stock exceeds 5%
+5. Output final portfolio weights and rationale
+
+Output a JSON object:
+{{
+  "combined_scores": {{
+    "AAPL": {{"W": 82.1, "rank": 1}},
+    "MSFT": {{"W": 84.2, "rank": 1}}
+  }},
+  "portfolio_allocation": {{
+    "AAPL": 0.04,
+    "MSFT": 0.05
+  }},
+  "portfolio_metrics": {{
+    "expected_return": "X%",
+    "target_volatility": "12%",
+    "sharpe_ratio_estimate": 1.2,
+    "sector_allocation": {{"tech": 0.25, "finance": 0.20}}
+  }},
+  "rationale": "Brief summary of portfolio construction logic"
+}}
+
+Build the portfolio. Output ONLY the JSON object.
+""".strip()
+
+    # ======================================================================
+    # Phase 4 – Learning / meta-analysis
+    # ======================================================================
+
+    def learning_meta_analysis(
+        self,
+        historical_trades: str,
+        actual_outcomes: str,
+        current_weights: str,
+    ) -> str:
+        return f"""
+You are analyzing the performance of the AI portfolio agent to improve it.
+
+RECENT TRADE HISTORY:
+{historical_trades}
+
+Example:
+- Run 1 (Jan 10): Selected AAPL (W=85), MSFT (W=82). Result: +3.2% return.
+- Run 2 (Jan 11): Selected NVDA (W=88), TSLA (W=65). Result: -1.1% return.
+- Run 3 (Jan 12): Selected GOOGL (W=80), META (W=78). Result: +0.8% return.
+
+ACTUAL MARKET OUTCOMES:
+{actual_outcomes}
+
+Example:
+- AAPL returned +4.2% (vs predicted +3%)
+- MSFT returned +2.1% (vs predicted +2.5%)
+- NVDA returned -2.5% (vs predicted +1.5%)
+- TSLA returned -3.1% (vs predicted -0.5%)
+- GOOGL returned +1.2% (vs predicted +0.8%)
+- META returned +2.8% (vs predicted +1%)
+
+CURRENT WEIGHTS:
+{current_weights}
+
+(X: Finance 40%, Y: Agentic 30%, Z: Sentiment 30%)
+
+ANALYSIS:
+1. Which component (X, Y, or Z) predicted best?
+2. Were high-scored picks actually good? (Accuracy)
+3. Were low-scored picks actually bad? (Negative predictive value)
+4. Did ensemble sentiment outperform individual LLMs?
+5. Should we reweight the components?
+6. Any systematic biases or failure modes?
+
+Output a JSON object:
+{{
+  "component_accuracy": {{
+    "X_financial": {{"accuracy": 0.62, "trend": "underperforming"}},
+    "Y_agentic": {{"accuracy": 0.65, "trend": "stable"}},
+    "Z_sentiment": {{"accuracy": 0.71, "trend": "strong"}}
+  }},
+  "recommended_weight_adjustment": {{
+    "X": 0.35,
+    "Y": 0.25,
+    "Z": 0.40
+  }},
+  "key_insights": "List 2-3 main insights from this analysis",
+  "systematic_biases": "Any patterns? e.g., 'tends to overweight growth'",
+  "next_iteration_changes": "What to change for next run"
+}}
+
+Analyze performance and recommend improvements. Output ONLY the JSON object.
+""".strip()
