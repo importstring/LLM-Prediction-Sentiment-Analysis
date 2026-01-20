@@ -16,6 +16,7 @@ from algorithm.algopkg.llm_clients.model_tiers import (
     is_supported_model,
     available_models,
 )
+from algorithm.algopkg.utils.env import get_env
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,7 @@ class PerplexityConfig:
     Last updated: Jan 2026.
     """
 
+    api_key_env: str = "PERPLEXITY_API_KEY"
     provider_name: str = "perplexity"
     default_tier: ModelTier | None = None  # use provider default
     default_max_tokens: int = 4_096
@@ -35,6 +37,15 @@ class PerplexityConfig:
         "You are an AI financial analyst providing market insights "
         "based on extensive data analysis."
     )
+
+    def load_api_key(self) -> str:
+        """
+        Load the Perplexity API key from the shared .env setup.
+
+        Raises:
+            RuntimeError: If the environment variable is not set or is empty.
+        """
+        return get_env(self.api_key_env)
 
 
 class PerplexityClient:
@@ -46,20 +57,19 @@ class PerplexityClient:
         - Provide synchronous and asynchronous query methods.
     """
 
-    def __init__(self, api_key: str, config: PerplexityConfig | None = None) -> None:
+    def __init__(self, api_key: str | None = None, config: PerplexityConfig | None = None) -> None:
         """
         Initialize the Perplexity client.
 
         Args:
-            api_key: Perplexity API key.
+            api_key: Optional explicit API key override.
             config: Optional configuration instance.
         """
-        api_key = api_key.strip()
-        if not api_key:
-            raise ValueError("Perplexity API key is empty")
-
-        self.api_key = api_key
         self.config = config or PerplexityConfig()
+        key = api_key.strip() if api_key is not None else self.config.load_api_key()
+        if not key:
+            raise ValueError("Perplexity API key is empty")
+        self.api_key = key
 
     # ---------- internals ----------
 
@@ -218,9 +228,8 @@ class PerplexityClient:
             return f"Error: {e}", False
 
 
-if __name__ == "__main__": # Testing
-    key = "YOUR_PPLX_API_KEY_HERE"
-    client = PerplexityClient(api_key=key)
+if __name__ == "__main__":  # Testing
+    client = PerplexityClient()
     text, cost = client.query(
         "Give a high-level overview of semiconductor ETFs.",
     )

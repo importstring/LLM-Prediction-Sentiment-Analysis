@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
@@ -14,6 +13,7 @@ from algorithm.algopkg.llm_clients.model_tiers import (
     is_supported_model,
     available_models,
 )
+from algorithm.algopkg.utils.env import get_env
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class GeminiConfig:
     """
     Configuration for the Gemini client.
 
-    Uses shared tier mapping from model_tiers_api.
+    Uses shared tier mapping from model_tiers.
 
     Last updated: Jan 2026.
     """
@@ -34,17 +34,12 @@ class GeminiConfig:
 
     def load_api_key(self) -> str:
         """
-        Load the Gemini API key from the configured environment variable.
+        Load the Gemini API key from the shared .env setup.
 
         Raises:
             RuntimeError: If the environment variable is not set or is empty.
         """
-        key = os.getenv(self.api_key_env, "").strip()
-        if not key:
-            raise RuntimeError(
-                f"Gemini API key not found in environment variable {self.api_key_env}"
-            )
-        return key
+        return get_env(self.api_key_env)
 
 
 class GeminiClient:

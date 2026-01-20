@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Tuple
 
 import openai
@@ -13,14 +12,16 @@ from algorithm.algopkg.llm_clients.model_tiers import (
     is_supported_model,
     available_models,
 )
+from algorithm.algopkg.utils.env import get_env
 
 
 class OpenAIConfig:
     """
-    Holds configuration and supported models for OpenAI usage.
+    Holds configuration for OpenAI usage.
     """
 
     PROVIDER_NAME = "openai"
+    API_KEY_ENV = "OPENAI_API_KEY"
 
     DEFAULT_ROLE = (
         "You are a financial analyst with extensive experience in the stock market. "
@@ -39,7 +40,10 @@ class OpenAIClient:
     """
 
     def __init__(self, api_key: str | None = None) -> None:
-        self.api_key = api_key or self._load_api_key()
+        # Single source of truth: .env via get_env
+        self.api_key = api_key.strip() if api_key is not None else get_env(
+            OpenAIConfig.API_KEY_ENV
+        )
         self.client = OpenAI(api_key=self.api_key)
 
     # ---------- public API ----------
@@ -77,17 +81,17 @@ class OpenAIClient:
                 False,
             )
 
-        max_tokens = max_tokens_for(provider, chosen_model, max_tokens)
-        role = role or OpenAIConfig.DEFAULT_ROLE
+        max_tokens_value = max_tokens_for(provider, chosen_model, max_tokens)
+        role_value = role or OpenAIConfig.DEFAULT_ROLE
 
         try:
             response = self.client.chat.completions.create(
                 model=chosen_model,
                 messages=[
-                    {"role": "system", "content": role},
+                    {"role": "system", "content": role_value},
                     {"role": "user", "content": query},
                 ],
-                max_tokens=max_tokens,
+                max_tokens=max_tokens_value,
                 temperature=temperature,
                 n=1,
                 stream=False,
@@ -109,29 +113,6 @@ class OpenAIClient:
             return "Connection error. Please check your internet connection.", False
         except Exception as e:
             return f"An unexpected error occurred: {e}", False
-
-    # ---------- internals ----------
-
-    def _load_api_key(self) -> str:
-        """Centralised key loading logic."""
-        api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        if api_key:
-            return api_key
-
-        from os.path import dirname, join
-
-        filepath = join(dirname(__file__), "API_Keys", "OpenAI.txt")
-        try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                api_key = f.read().strip()
-        except Exception:
-            raise RuntimeError(
-                "OpenAI API key not found in environment variables or API_Keys/OpenAI.txt"
-            )
-
-        if not api_key:
-            raise RuntimeError("OpenAI API key file is empty")
-        return api_key
 
 
 if __name__ == "__main__":

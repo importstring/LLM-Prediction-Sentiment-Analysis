@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
@@ -13,6 +12,7 @@ from algorithm.algopkg.llm_clients.model_tiers import (
     is_supported_model,
     available_models,
 )
+from algorithm.algopkg.utils.env import get_env
 
 
 @dataclass(frozen=True)
@@ -25,22 +25,17 @@ class ClaudeConfig:
 
     api_key_env: str = "ANTHROPIC_API_KEY"
     provider_name: str = "claude"
-    default_tier: ModelTier | None = "medium" 
+    default_tier: ModelTier | None = "medium"
     default_max_tokens: int = 1_024
 
     def load_api_key(self) -> str:
         """
-        Load the Claude API key from the configured environment variable.
+        Load the Claude API key from the shared .env setup.
 
         Raises:
             RuntimeError: If the environment variable is not set or is empty.
         """
-        key = os.getenv(self.api_key_env, "").strip()
-        if not key:
-            raise RuntimeError(
-                f"Claude API key not found in environment variable {self.api_key_env}"
-            )
-        return key
+        return get_env(self.api_key_env)
 
 
 class ClaudeClient:
