@@ -3,43 +3,38 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Tuple
+from typing import Tuple
 
 import aiohttp
 import requests
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from algorithm.algopkg.llm_clients.model_tiers import (
+    ModelTier,
+    model_for,
+    max_tokens_for,
+    is_supported_model,
+    available_models,
+)
+
 
 @dataclass(frozen=True)
 class PerplexityConfig:
     """
-    Configuration and supported models for Perplexity usage.
+    Configuration for Perplexity usage.
 
     Last updated: Jan 2026.
     """
-    default_model: str = "llama-3.1-sonar-large-128k-online"
+
+    provider_name: str = "perplexity"
+    default_tier: ModelTier | None = None  # use provider default
     default_max_tokens: int = 4_096
     default_temperature: float = 0.7
 
-    supported_models: Dict[str, Dict[str, int]] = None
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "supported_models",
-            {
-                "llama-3.1-sonar-large-128k-online": {"max_tokens": 4_096},
-                "pplx-7b-online": {"max_tokens": 2_048},
-                "pplx-70b-online": {"max_tokens": 4_096},
-            },
-        )
-
-    def is_supported(self, model: str) -> bool:
-        return model in self.supported_models
-
-    def max_tokens_for(self, model: str, requested: int) -> int:
-        limit = self.supported_models[model]["max_tokens"]
-        return min(requested, limit)
+    default_role: str = (
+        "You are an AI financial analyst providing market insights "
+        "based on extensive data analysis."
+    )
 
 
 class PerplexityClient:
@@ -59,15 +54,56 @@ class PerplexityClient:
             api_key: Perplexity API key.
             config: Optional configuration instance.
         """
-        self.api_key = api_key.strip()
-        if not self.api_key:
+        api_key = api_key.strip()
+        if not api_key:
             raise ValueError("Perplexity API key is empty")
 
+        self.api_key = api_key
         self.config = config or PerplexityConfig()
-        self.default_model = self.config.default_model
-        self.default_role = (
-            "You are an AI financial analyst providing market insights based on extensive data analysis."
+
+    # ---------- internals ----------
+
+    def _headers(self) -> dict:
+        """Base headers for Perplexity requests."""
+        current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Perplexity-Version": current_date,
+            "Content-Type": "application/json",
+        }
+
+    def _resolve_model_and_limits(
+        self,
+        model: str | None,
+        max_tokens: int | None,
+        temperature: float | None,
+    ) -> tuple[str, int, float]:
+        """
+        Decide on model, max_tokens, and temperature using the shared tier API.
+        """
+        provider = self.config.provider_name
+
+        # Use explicit model if provided, otherwise provider default / tier
+        chosen_model = model_for(
+            provider=provider,
+            tier=self.config.default_tier,
+            explicit_model=model,
         )
+
+        if not is_supported_model(provider, chosen_model):
+            raise ValueError(
+                f"Unsupported model for {provider}: {chosen_model}. "
+                f"Available models: {available_models(provider)}"
+            )
+
+        # Clamp tokens via shared max_tokens_for
+        requested_tokens = max_tokens or self.config.default_max_tokens
+        clamped_tokens = max_tokens_for(provider, chosen_model, requested_tokens)
+
+        # Temperature with default
+        temp = temperature if temperature is not None else self.config.default_temperature
+
+        return chosen_model, clamped_tokens, float(temp)
 
     # ---------- public API: sync ----------
 
@@ -82,43 +118,31 @@ class PerplexityClient:
         """
         Execute a synchronous query against the Perplexity chat completions endpoint.
 
-        Args:
-            query: User query text.
-            model: Optional model name override.
-            max_tokens: Optional maximum number of output tokens.
-            temperature: Optional sampling temperature.
-
         Returns:
             Tuple of (response_text, cost_estimate). The cost estimate is currently 0.0.
         """
         if not query.strip():
             return "Invalid query provided. Please check the input.", 0.0
 
-        current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Perplexity-Version": current_date,
-            "Content-Type": "application/json",
-        }
+        try:
+            model_id, max_tokens_value, temperature_value = self._resolve_model_and_limits(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+        except ValueError as e:
+            # Unsupported model or config issue
+            return str(e), 0.0
 
-        model_id = model or self.default_model
-        if not self.config.is_supported(model_id):
-            return f"Unsupported model: {model_id}", 0.0
-
-        max_tokens_value = max_tokens or self.config.default_max_tokens
-        max_tokens_value = self.config.max_tokens_for(model_id, max_tokens_value)
-        temperature_value = (
-            temperature if temperature is not None else self.config.default_temperature
-        )
-
+        headers = self._headers()
         payload = {
             "model": model_id,
             "messages": [
-                {"role": "system", "content": self.default_role},
+                {"role": "system", "content": self.config.default_role},
                 {"role": "user", "content": query},
             ],
-            "temperature": float(temperature_value),
-            "max_tokens": int(max_tokens_value),
+            "temperature": temperature_value,
+            "max_tokens": max_tokens_value,
         }
 
         try:
@@ -149,28 +173,20 @@ class PerplexityClient:
         """
         Execute an asynchronous query against the Perplexity chat completions endpoint.
 
-        Args:
-            session: Existing aiohttp client session.
-            query: User query text.
-            model: Optional model name override.
-            max_tokens: Optional maximum number of output tokens.
-            temperature: Optional sampling temperature.
-
         Returns:
             Tuple of (response_text, success_flag).
         """
         if not query.strip():
             return "Invalid query provided. Please check the input.", False
 
-        model_id = model or self.default_model
-        if not self.config.is_supported(model_id):
-            return f"Unsupported model: {model_id}", False
-
-        max_tokens_value = max_tokens or self.config.default_max_tokens
-        max_tokens_value = self.config.max_tokens_for(model_id, max_tokens_value)
-        temperature_value = (
-            temperature if temperature is not None else self.config.default_temperature
-        )
+        try:
+            model_id, max_tokens_value, temperature_value = self._resolve_model_and_limits(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+        except ValueError as e:
+            return str(e), False
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -179,11 +195,11 @@ class PerplexityClient:
         payload = {
             "model": model_id,
             "messages": [
-                {"role": "system", "content": self.default_role},
+                {"role": "system", "content": self.config.default_role},
                 {"role": "user", "content": query},
             ],
-            "temperature": float(temperature_value),
-            "max_tokens": int(max_tokens_value),
+            "temperature": temperature_value,
+            "max_tokens": max_tokens_value,
         }
 
         try:
@@ -202,7 +218,7 @@ class PerplexityClient:
             return f"Error: {e}", False
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": # Testing
     key = "YOUR_PPLX_API_KEY_HERE"
     client = PerplexityClient(api_key=key)
     text, cost = client.query(

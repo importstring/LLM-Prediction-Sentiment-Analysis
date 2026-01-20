@@ -1,41 +1,31 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, Tuple
+from typing import Tuple
 
 import openai
 from openai import OpenAI
 
+from algorithm.algopkg.llm_clients.model_tiers import (
+    ModelTier,
+    model_for,
+    max_tokens_for,
+    is_supported_model,
+    available_models,
+)
+
 
 class OpenAIConfig:
-    """Holds configuration and supported models for OpenAI usage."""
+    """
+    Holds configuration and supported models for OpenAI usage.
+    """
 
-    # Adjusted the models. Last updated Jan 2026
-    SUPPORTED_MODELS: Dict[str, Dict[str, int]] = {
-        # Flagship general-purpose model
-        "gpt-4o": {"max_tokens": 16_000}, # ~16k output, ~128k context
-        
-        # Newer 4.1 family – great for code / tools
-        "gpt-4.1": {"max_tokens": 16_000}, # Up to 1M context
+    PROVIDER_NAME = "openai"
 
-        # Lighter/cheaper variant 
-        "gpt-4.1-mini": {"max_tokens": 16_000},
-    }
-
-    DEFAULT_MODEL = "gpt-4o"
     DEFAULT_ROLE = (
         "You are a financial analyst with extensive experience in the stock market. "
         "You provide insights based on your current knowledge."
     )
-
-    @classmethod
-    def is_supported(cls, model: str) -> bool:
-        return model in cls.SUPPORTED_MODELS
-
-    @classmethod
-    def max_tokens_for(cls, model: str, requested: int) -> int:
-        limit = cls.SUPPORTED_MODELS[model]["max_tokens"]
-        return min(requested, limit)
 
 
 class OpenAIClient:
@@ -58,6 +48,7 @@ class OpenAIClient:
         self,
         query: str,
         model: str | None = None,
+        tier: ModelTier | None = None,
         max_tokens: int = 4_000,
         temperature: float = 0.5,
         role: str | None = None,
@@ -70,20 +61,28 @@ class OpenAIClient:
         if not query.strip():
             return "Invalid query provided. Please check the input.", False
 
-        model = model or OpenAIConfig.DEFAULT_MODEL
-        if not OpenAIConfig.is_supported(model):
+        provider = OpenAIConfig.PROVIDER_NAME
+
+        # Priority: explicit model > tier > default (handled by model_for)
+        chosen_model = model_for(
+            provider=provider,
+            tier=tier,
+            explicit_model=model,
+        )
+
+        if not is_supported_model(provider, chosen_model):
             return (
-                f"Unsupported model: {model}. "
-                f"Available models: {list(OpenAIConfig.SUPPORTED_MODELS.keys())}",
+                f"Unsupported model for {provider}: {chosen_model}. "
+                f"Available models: {available_models(provider)}",
                 False,
             )
 
-        max_tokens = OpenAIConfig.max_tokens_for(model, max_tokens)
+        max_tokens = max_tokens_for(provider, chosen_model, max_tokens)
         role = role or OpenAIConfig.DEFAULT_ROLE
 
         try:
             response = self.client.chat.completions.create(
-                model=model,
+                model=chosen_model,
                 messages=[
                     {"role": "system", "content": role},
                     {"role": "user", "content": query},
@@ -137,7 +136,10 @@ class OpenAIClient:
 
 if __name__ == "__main__":
     client = OpenAIClient()
-    text, ok = client.query("What are the key factors affecting stock market volatility?")
+    text, ok = client.query(
+        "What are the key factors affecting stock market volatility?",
+        tier="medium",  # or "expensive" / "cheap" / "extra_cheap"
+    )
     if ok:
         print("Response:", text)
     else:

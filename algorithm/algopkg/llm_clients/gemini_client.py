@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Literal
+from typing import Dict, List, Tuple
 
 from google import genai
 from google.genai import types  # type: ignore[import]
 
-# Rough cost/quality tiers:
-# - Expensive  : high-reasoning Pro model
-# - Medium     : balanced Flash model
-# - Cheap      : cost-optimized Flash-Lite / smaller Flash
-
-GeminiTier = Literal["expensive", "medium", "cheap"]
+from algorithm.algopkg.llm_clients.model_tiers import (
+    ModelTier,
+    model_for,
+    max_tokens_for,
+    is_supported_model,
+    available_models,
+)
 
 
 @dataclass(frozen=True)
@@ -20,21 +21,16 @@ class GeminiConfig:
     """
     Configuration for the Gemini client.
 
-    Model tiers are mapped to concrete Gemini model IDs.
+    Uses shared tier mapping from model_tiers_api.
 
     Last updated: Jan 2026.
     """
+
     api_key_env: str = "GEMINI_API_KEY"
-
-    # Model mapping by cost/quality tier
-    expensive_model: str = "gemini-2.5-pro"        # high reasoning, most expensive 
-    medium_model: str = "gemini-2.5-flash"        # balanced speed/quality 
-    cheap_model: str = "gemini-2.5-flash-lite"    # most cost-efficient, fastest
-
-    # Defaults (used if caller doesn’t specify)
-    default_tier: GeminiTier = "cheap"
+    provider_name: str = "gemini"
+    default_tier: ModelTier | None = "cheap"
     default_temperature: float = 0.5
-    default_max_output_tokens: int = 1024
+    default_max_output_tokens: int = 1_024
 
     def load_api_key(self) -> str:
         """
@@ -50,21 +46,6 @@ class GeminiConfig:
             )
         return key
 
-    def model_for_tier(self, tier: GeminiTier | None, override_model: str | None) -> str:
-        """
-        Resolve which model to use based on an explicit model override
-        or a cost/quality tier.
-        """
-        if override_model:
-            return override_model
-
-        tier = tier or self.default_tier
-        if tier == "expensive":
-            return self.expensive_model
-        if tier == "cheap":
-            return self.cheap_model
-        return self.medium_model
-
 
 class GeminiClient:
     """
@@ -73,7 +54,7 @@ class GeminiClient:
     Responsibilities:
       - Maintain a configured `genai.Client` instance.
       - Expose a chat() method with a unified interface for use alongside other LLM clients.
-      - Allow callers to pick cost/quality via tiers: expensive / medium / cheap.
+      - Allow callers to pick cost/quality via tiers.
     """
 
     def __init__(self, config: GeminiConfig | None = None) -> None:
@@ -87,12 +68,47 @@ class GeminiClient:
         api_key = self.config.load_api_key()
         self.client = genai.Client(api_key=api_key)
 
+    # ---------- internals ----------
+
+    def _resolve_model_and_limits(
+        self,
+        model: str | None,
+        max_output_tokens: int | None,
+        tier: ModelTier | None,
+    ) -> Tuple[str, int]:
+        """
+        Decide on model and max_output_tokens using the shared tier API.
+        """
+        provider = self.config.provider_name
+
+        chosen_model = model_for(
+            provider=provider,
+            tier=tier or self.config.default_tier,
+            explicit_model=model,
+        )
+
+        if not is_supported_model(provider, chosen_model):
+            raise ValueError(
+                f"Unsupported model for {provider}: {chosen_model}. "
+                f"Available models: {available_models(provider)}"
+            )
+
+        requested = (
+            max_output_tokens
+            if max_output_tokens is not None
+            else self.config.default_max_output_tokens
+        )
+        clamped = max_tokens_for(provider, chosen_model, requested)
+        return chosen_model, int(clamped)
+
+    # ---------- public API ----------
+
     def chat(
         self,
         messages: List[Dict[str, str]],
         *,
         model: str | None = None,
-        tier: GeminiTier | None = None,
+        tier: ModelTier | None = None,
         temperature: float | None = None,
         max_output_tokens: int | None = None,
     ) -> Tuple[str, bool]:
@@ -105,11 +121,11 @@ class GeminiClient:
                   - "role": "user", "assistant", or "system".
                   - "content": Text content of the message.
             model:
-                Optional explicit model name override (e.g. "gemini-2.5-pro").
+                Optional explicit model name override.
                 If provided, this wins over the tier.
             tier:
-                Cost/quality tier: "expensive", "medium", or "cheap".
-                If omitted, uses config.default_tier.
+                Cost/quality tier: "expensive", "medium", "cheap", or "extra_cheap"
+                (though Gemini config uses only the ones you filled).
             temperature:
                 Optional sampling temperature override.
             max_output_tokens:
@@ -118,14 +134,20 @@ class GeminiClient:
         Returns:
             Tuple of (response_text, success_flag).
         """
-        model_name = self.config.model_for_tier(tier, model)
-        temperature = float(
+        if not messages:
+            return "No messages provided.", False
+
+        try:
+            model_name, max_tokens = self._resolve_model_and_limits(
+                model=model,
+                max_output_tokens=max_output_tokens,
+                tier=tier,
+            )
+        except ValueError as e:
+            return str(e), False
+
+        temp = float(
             temperature if temperature is not None else self.config.default_temperature
-        )
-        max_tokens = int(
-            max_output_tokens
-            if max_output_tokens is not None
-            else self.config.default_max_output_tokens
         )
 
         contents: List[types.Content] = []
@@ -147,7 +169,7 @@ class GeminiClient:
                 model=model_name,
                 contents=contents,
                 config=types.GenerateContentConfig(
-                    temperature=temperature,
+                    temperature=temp,
                     max_output_tokens=max_tokens,
                 ),
             )

@@ -6,6 +6,14 @@ from typing import Dict, List, Tuple
 
 from anthropic import Anthropic
 
+from algorithm.algopkg.llm_clients.model_tiers import (
+    ModelTier,
+    model_for,
+    max_tokens_for,
+    is_supported_model,
+    available_models,
+)
+
 
 @dataclass(frozen=True)
 class ClaudeConfig:
@@ -14,9 +22,11 @@ class ClaudeConfig:
 
     Last updated: Jan 2026.
     """
+
     api_key_env: str = "ANTHROPIC_API_KEY"
-    default_model: str = "claude-4.5-sonnet"
-    default_max_tokens: int = 1024
+    provider_name: str = "claude"
+    default_tier: ModelTier | None = "medium" 
+    default_max_tokens: int = 1_024
 
     def load_api_key(self) -> str:
         """
@@ -53,6 +63,33 @@ class ClaudeClient:
         api_key = self.config.load_api_key()
         self.client = Anthropic(api_key=api_key)
 
+    def _resolve_model_and_tokens(
+        self,
+        model: str | None,
+        max_tokens: int | None,
+    ) -> Tuple[str, int]:
+        """
+        Decide on model and max_tokens using the shared tier API.
+        """
+        provider = self.config.provider_name
+
+        # explicit model > tier > provider default
+        model_name = model_for(
+            provider=provider,
+            tier=self.config.default_tier,
+            explicit_model=model,
+        )
+
+        if not is_supported_model(provider, model_name):
+            raise ValueError(
+                f"Unsupported model for {provider}: {model_name}. "
+                f"Available models: {available_models(provider)}"
+            )
+
+        requested = max_tokens if max_tokens is not None else self.config.default_max_tokens
+        max_tokens_value = max_tokens_for(provider, model_name, requested)
+        return model_name, int(max_tokens_value)
+
     def chat(
         self,
         messages: List[Dict[str, str]],
@@ -63,7 +100,7 @@ class ClaudeClient:
         Execute a chat-style request against the Claude Messages API.
 
         Args:
-            messages: Sequence of message dictionaries with keys:
+            messages: Sequence of message dicts:
                 - "role": "user" or "assistant".
                 - "content": Text content of the message.
             model: Optional model name override.
@@ -72,10 +109,16 @@ class ClaudeClient:
         Returns:
             Tuple of (response_text, success_flag).
         """
-        model_name = model or self.config.default_model
-        max_tokens_value = int(
-            max_tokens if max_tokens is not None else self.config.default_max_tokens
-        )
+        if not messages:
+            return "No messages provided.", False
+
+        try:
+            model_name, max_tokens_value = self._resolve_model_and_tokens(
+                model=model,
+                max_tokens=max_tokens,
+            )
+        except ValueError as e:
+            return str(e), False
 
         claude_messages = [
             {"role": m["role"], "content": m["content"]} for m in messages
@@ -87,7 +130,7 @@ class ClaudeClient:
                 max_tokens=max_tokens_value,
                 messages=claude_messages,
             )
-            parts = []
+            parts: List[str] = []
             for block in response.content:
                 if getattr(block, "type", None) == "text":
                     parts.append(block.text)

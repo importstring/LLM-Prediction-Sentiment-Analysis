@@ -101,7 +101,7 @@ class BaseLLMClient(ABC):
 
         if self._enable_sentiment and self._sentiment_analyzer and result.text:
             label, score = self._sentiment_analyzer.analyze(result.text)
-            # Create a new ChatResult with sentiment filled in (dataclass is frozen=False, or use replace)
+
             result = ChatResult(
                 text=result.text,
                 success=result.success,
