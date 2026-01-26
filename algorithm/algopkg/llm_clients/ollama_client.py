@@ -55,12 +55,11 @@ class OllamaClient:
         messages: list of {"role": "user" | "assistant" | "system", "content": "..."}.
         Returns (assistant_text, success_flag).
         """
-        model_name = model or self.config.default_model
         temperature = float(temperature if temperature is not None else self.config.default_temperature)
         num_predict = int(num_predict if num_predict is not None else self.config.default_num_predict)
 
         payload = {
-            "model": model_name,
+            "model": self.config.default_model,
             "messages": messages,
             "options": {
                 "temperature": temperature,
@@ -106,12 +105,11 @@ class OllamaClient:
 
         Returns (response_text, success_flag).
         """
-        model_name = model or self.config.default_model
         temperature = float(temperature if temperature is not None else self.config.default_temperature)
         num_predict = int(num_predict if num_predict is not None else self.config.default_num_predict)
 
         payload = {
-            "model": model_name,
+            "model": self.config.default_model,
             "prompt": prompt,
             "options": {
                 "temperature": temperature,
